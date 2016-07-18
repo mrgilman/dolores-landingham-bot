@@ -1,28 +1,30 @@
 require "slack-ruby-client"
 
 class EmployeeImporter
-  def initialize
-    configure_slack
-  end
+  def run(dry_run = false)
+    import_results = { created: 0, skipped: 0, dry_run: false }
+    slack_user_finder = SlackUserFinder.new("", client)
+    total_employees = slack_user_finder.users_list.count
 
-  def import(dry_run = false)
-    import_results = {created: 0, skipped: 0, dry_run: false}
-    slack_user_importer = SlackUserImporter.new("", client)
-    total_employees = slack_user_importer.slack_usernames.count
-
-    slack_user_importer.slack_usernames.each_with_index do |slack_username, index|
-      if !dry_run
-        success = import_employee(slack_username)
-      else
-        success = dry_import_employee(slack_username)
+    slack_user_finder.users_list.each_with_index do |user, index|
+      if dry_run
+        success = dry_import_employee(
+          slack_username: user["name"],
+          slack_user_id: user["id"],
+        )
         import_results[:dry_run] = true
+      else
+        success = import_employee(
+          slack_username: user["name"],
+          slack_user_id: user["id"],
+        )
       end
 
       if success
-        Rails.logger.info "#{index + 1}/#{total_employees}: Created #{slack_username}#{" (dry run)" if dry_run}".green
+        log_success(index, total_employees, user, dry_run)
         import_results[:created] += 1
       else
-        Rails.logger.info "#{index + 1}/#{total_employees}: Skipped #{slack_username}#{" (dry run)" if dry_run}".yellow
+        log_failure(index, total_employees, user, dry_run)
         import_results[:skipped] += 1
       end
     end
@@ -36,26 +38,40 @@ class EmployeeImporter
     @client ||= Slack::Web::Client.new
   end
 
-  def configure_slack
-    Slack.configure do |config|
-      config.token = ENV['SLACK_API_TOKEN']
-    end
+  def dry_import_employee(slack_username:, slack_user_id:)
+    Employee.where(
+      slack_username: slack_username,
+      slack_user_id: slack_user_id,
+    ).empty?
   end
 
-  def dry_import_employee(slack_username)
-    Employee.where(slack_username: slack_username).size == 0
-  end
+  def import_employee(slack_username:, slack_user_id:)
+    employee = Employee.new(
+      slack_username: slack_username,
+      slack_user_id: slack_user_id,
+      started_on: Time.current,
+    )
 
-  def import_employee(slack_username)
-    # TODO:  Once we can hook up the Team API, we'll want to grab the start
-    # TODO:  date of an employee from there instead of defaulting to the
-    # TODO:  current date and time.
-
-    # TODO:  We'll also want to verify that the Slack user is an actual person
-    # TODO:  Against the Team API - Slack alone cannot tell us if they are real
-    # TODO:  or not.
-
-    employee = Employee.new(slack_username: slack_username, started_on: Time.now)
     employee.save
+  end
+
+  def log_success(index, total_employees, user, dry_run)
+    info = "#{index + 1}/#{total_employees}: Created #{user['name']}"
+
+    if dry_run
+      info.concat(" (dry run)")
+    end
+
+    Rails.logger.info info.green
+  end
+
+  def log_failure(index, total_employees, user, dry_run)
+    info = "#{index + 1}/#{total_employees}: Skipped #{user['name']}"
+
+    if dry_run
+      info.concat(" (dry run)")
+    end
+
+    Rails.logger.info info.yellow
   end
 end

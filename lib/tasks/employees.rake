@@ -1,7 +1,7 @@
 namespace :employees do
   desc "Imports all employees from Slack into the Dolores Landingham bot."
   task import: :environment do
-    logger = ActiveSupport::Logger.new('log/employees_import.log')
+    logger = ActiveSupport::Logger.new("log/employees_import.log")
     start_time = Time.now
 
     logger.info "Employee import task started at #{start_time}."

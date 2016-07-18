@@ -7,6 +7,7 @@ describe SlackUserImporter do
         "testusername",
         "testusername2",
         "testusername3",
+        "u2",
       ]
 
       slack_usernames = SlackUserImporter.new("", Slack::Web::Client.new).slack_usernames
